@@ -1,45 +1,42 @@
-# Data Catalogue – Bronze Layer
-
+# Data Catalogue: Bronze Layer
 **Project:** Kenya Retail Location Optimization System  
 **Version:** 1.0  
 **Date:** December 2025  
-**Author:** Junior Kevin  
+**Author:** Junior Kevin 
 **Status:** Active
 
 ---
 
 ## Document Control
 
-| Item                | Details                                   |
-| ------------------- | ----------------------------------------- |
-| Project Name        | Kenya Retail Location Optimization System |
-| Layer               | Bronze (Raw Data)                         |
-| Data Classification | Synthetic – For Learning & Portfolio      |
-| Update Frequency    | One-time generation                       |
-| Retention Policy    | Keep for project duration                 |
-| Owner               | Junior Kevin                              |
-| Contact             | —                                         |
+| **Item** | **Details** |
+|----------|-------------|
+| **Project Name** | Kenya Retail Location Optimization System |
+| **Layer** | Bronze (Raw Data) |
+| **Data Classification** | Synthetic - For Learning & Portfolio |
+| **Update Frequency** | One-time generation |
+| **Retention Policy** | Keep for project duration |
+| **Owner** | [Your Name] |
+| **Contact** | [Your Email] |
 
 ---
 
 ## 📊 Overview
 
-The Bronze Layer contains raw, unprocessed data exactly as received from source systems. This layer preserves original schemas, formats, and data quality issues to simulate real-world data ingestion scenarios.
+The **Bronze Layer** contains raw, unprocessed data exactly as it would be received from source systems. This layer preserves the original schema, formats, and data quality issues to simulate real-world data ingestion scenarios.
 
-### Key Principles
+### Key Principles:
+1. **Immutable:** Data is never modified in-place
+2. **Preserves Source Format:** Maintains original schema and issues
+3. **Complete History:** All versions are retained
+4. **Source-Tagged:** Each record includes data source metadata
 
-* **Immutable:** Data is never modified in-place
-* **Preserves Source Format:** Original schema and issues retained
-* **Complete History:** All versions preserved
-* **Source-Tagged:** Each record includes source metadata
-
-### Storage Specifications
-
-* **Format:** Parquet (primary), CSV (backup)
-* **Location:** `/bronze/` directory
-* **Compression:** Snappy (Parquet)
-* **Encoding:** UTF-8
-* **Backup:** Version-controlled in GitHub
+### Storage Specifications:
+- **Format:** Parquet (primary) + CSV (backup)
+- **Location:** `/bronze/` directory
+- **Compression:** Snappy (Parquet)
+- **Encoding:** UTF-8
+- **Backup:** Version-controlled in GitHub
 
 ---
 
