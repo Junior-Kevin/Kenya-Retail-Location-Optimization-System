@@ -11,9 +11,10 @@ DESCRIPTION:
 PROCESS FLOW:
     1. Validate parameters and initialize logging
     2. Begin transaction for data consistency
-    3. Sequentially load each table with transformations
-    4. Commit transaction on success
-    5. Rollback on error with detailed logging
+    3. TRUNCATE/DELETE silver tables to avoid duplication
+    4. Sequentially load each table with transformations
+    5. Commit transaction on success
+    6. Rollback on error with detailed logging
     
 PARAMETERS:
     @LoadDate    - Optional date for incremental loading (default: current date)
@@ -29,8 +30,8 @@ DEPENDENCIES:
     
 AUTHOR: Kevin Junior
 CREATED: 2025-12-19
-LAST MODIFIED: 2025-12-19
-VERSION: 2.0
+LAST MODIFIED: 2025-12-20
+VERSION: 2.3 - Simplified constraint handling, using DELETE for constrained tables
 ===============================================================================
 */
 CREATE OR ALTER PROCEDURE silver.usp_LoadSilverLayer
@@ -62,10 +63,64 @@ BEGIN
         PRINT 'Procedure: ' + @ProcedureName;
         PRINT 'Load Date: ' + CAST(@LoadDate AS NVARCHAR(20));
         PRINT 'Start Time: ' + FORMAT(@StartTime, 'yyyy-MM-dd HH:mm:ss');
+        PRINT 'Mode: Full reload (TRUNCATE/DELETE and INSERT)';
         PRINT REPLICATE('=', 80);
         
         -- --------------------------------------------------------------------
-        -- 1. LOAD CRM DATA
+        -- IMPORTANT: Load order matters for referential integrity
+        -- 1. First truncate/dependent tables (child tables)
+        -- 2. Then truncate/parent tables
+        -- 3. Load parent tables first
+        -- 4. Then load child tables
+        -- --------------------------------------------------------------------
+        
+        -- --------------------------------------------------------------------
+        -- PHASE 1: TRUNCATE/DELETE ALL SILVER TABLES
+        -- --------------------------------------------------------------------
+        PRINT 'PHASE 1: Clearing all silver tables...';
+        
+        -- 1. Clear child tables first (tables with foreign keys)
+        PRINT '   1. Clearing child tables...';
+        
+        -- Clear competitor_stores first (depends on competitors)
+        PRINT '      • Clearing silver.competitor_stores...';
+        TRUNCATE TABLE silver.competitor_stores;
+        
+        -- 2. Clear parent tables (tables referenced by others)
+        PRINT '   2. Clearing parent tables...';
+        
+        -- Clear all other tables (no foreign key dependencies)
+        PRINT '      • Clearing silver.crm...';
+        TRUNCATE TABLE silver.crm;
+        
+        PRINT '      • Clearing silver.pos...';
+        TRUNCATE TABLE silver.pos;
+        
+        PRINT '      • Clearing silver.stores...';
+        TRUNCATE TABLE silver.stores;
+        
+        PRINT '      • Clearing silver.gis_counties...';
+        TRUNCATE TABLE silver.gis_counties;
+        
+        PRINT '      • Clearing silver.gis_locations...';
+        TRUNCATE TABLE silver.gis_locations;
+        
+        PRINT '      • Clearing silver.economic...';
+        TRUNCATE TABLE silver.economic;
+        
+        -- 3. Clear competitors table (has dependent table competitor_stores)
+        PRINT '      • Clearing silver.competitors (using DELETE due to foreign key)...';
+        DELETE FROM silver.competitors;  -- Use DELETE instead of TRUNCATE
+        
+        PRINT '   All silver tables cleared successfully.';
+        
+        -- --------------------------------------------------------------------
+        -- PHASE 2: LOAD DATA WITH PROPER REFERENTIAL ORDER
+        -- --------------------------------------------------------------------
+        PRINT 'PHASE 2: Loading data with referential integrity...';
+        
+        -- --------------------------------------------------------------------
+        -- 1. LOAD CRM DATA (No dependencies)
         -- --------------------------------------------------------------------
         PRINT '1. Loading CRM Customer Data...';
         
@@ -137,7 +192,7 @@ BEGIN
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 2. LOAD POS TRANSACTION DATA
+        -- 2. LOAD POS TRANSACTION DATA (Depends on CRM and stores)
         -- --------------------------------------------------------------------
         PRINT '2. Loading POS Transaction Data...';
         
@@ -170,7 +225,7 @@ BEGIN
             
             -- Customer handling (NULL becomes ANONYMOUS)
             CASE 
-                WHEN customer_id IS NULL OR LTRIM(RTRIM(customer_id)) = '' 
+                WHEN customer_id IS NULL 
                 THEN 'ANONYMOUS'
                 ELSE customer_id
             END AS customer_id,
@@ -242,7 +297,7 @@ BEGIN
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 3. LOAD STORES DATA
+        -- 3. LOAD STORES DATA (No dependencies)
         -- --------------------------------------------------------------------
         PRINT '3. Loading Store Locations Data...';
         
@@ -258,142 +313,142 @@ BEGIN
         SET @RowsAffected = @@ROWCOUNT;
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
--- --------------------------------------------------------------------
--- 4. LOAD GIS COUNTIES DATA (PRESERVING DECIMAL VALUES)
--- --------------------------------------------------------------------
-PRINT '4. Loading GIS County Demographic Data...';
-
-INSERT INTO silver.gis_counties (
-    county_id, county_name, population_2023, area_sqkm,
-    population_density_psqkm, poverty_rate, unemployment_rate,
-    avg_household_income_kes, urbanization_rate, literacy_rate,
-    road_infrastructure_score, public_transport_score,
-    internet_penetration, commercial_rent_kes_psqm,
-    business_registration_days, security_index,
-    tourist_arrivals_annual, latitude, longitude,
-    major_towns, competitor_counts_json
-)
-SELECT 
-    county_id,
-    county_name,
-    
-    -- Population metrics with validation
-    CASE 
-        WHEN TRY_CAST(population_2023 AS INT) IS NULL THEN 0
-        ELSE CAST(population_2023 AS INT)
-    END AS population_2023,
-    
-    CASE 
-        WHEN TRY_CAST(area_sqkm AS DECIMAL(18,2)) IS NULL THEN 0.0
-        ELSE CAST(area_sqkm AS DECIMAL(18,2))
-    END AS area_sqkm,
-    
-    -- Calculated population density
-    CASE 
-        WHEN TRY_CAST(population_2023 AS DECIMAL(18,2)) IS NULL 
-             OR TRY_CAST(area_sqkm AS DECIMAL(18,2)) IS NULL 
-             OR CAST(area_sqkm AS DECIMAL(18,2)) = 0
-        THEN 0.0
-        ELSE ROUND(
-            CAST(population_2023 AS DECIMAL(18,2)) / 
-            CAST(area_sqkm AS DECIMAL(18,2)), 
-            2
+        -- --------------------------------------------------------------------
+        -- 4. LOAD GIS COUNTIES DATA (No dependencies)
+        -- --------------------------------------------------------------------
+        PRINT '4. Loading GIS County Demographic Data...';
+        
+        INSERT INTO silver.gis_counties (
+            county_id, county_name, population_2023, area_sqkm,
+            population_density_psqkm, poverty_rate, unemployment_rate,
+            avg_household_income_kes, urbanization_rate, literacy_rate,
+            road_infrastructure_score, public_transport_score,
+            internet_penetration, commercial_rent_kes_psqm,
+            business_registration_days, security_index,
+            tourist_arrivals_annual, latitude, longitude,
+            major_towns, competitor_counts_json
         )
-    END AS population_density_psqkm,
-    
-    -- Economic indicators with validation
-    CASE 
-        WHEN TRY_CAST(poverty_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-        ELSE CAST(poverty_rate AS DECIMAL(5,2))
-    END AS poverty_rate,
-    
-    CASE 
-        WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-        ELSE CAST(unemployment_rate AS DECIMAL(5,2))
-    END AS unemployment_rate,
-    
-    CASE 
-        WHEN TRY_CAST(avg_household_income_kes AS DECIMAL(18,2)) IS NULL THEN 0.0
-        ELSE CAST(avg_household_income_kes AS DECIMAL(18,2))
-    END AS avg_household_income_kes,
-    
-    -- Development metrics
-    CASE 
-        WHEN TRY_CAST(urbanization_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-        ELSE CAST(urbanization_rate AS DECIMAL(5,2))
-    END AS urbanization_rate,
-    
-    CASE 
-        WHEN TRY_CAST(literacy_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-        ELSE CAST(literacy_rate AS DECIMAL(5,2))
-    END AS literacy_rate,
-    
-    -- Infrastructure scores: Keep as DECIMAL with 1 decimal place
-    CASE 
-        WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) IS NULL THEN 5.0
-        WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) < 1.0 THEN 1.0
-        WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) > 10.0 THEN 10.0
-        ELSE CAST(road_infrastructure_score AS DECIMAL(3,1))
-    END AS road_infrastructure_score,
-    
-    CASE 
-        WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) IS NULL THEN 5.0
-        WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) < 1.0 THEN 1.0
-        WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) > 10.0 THEN 10.0
-        ELSE CAST(public_transport_score AS DECIMAL(3,1))
-    END AS public_transport_score,
-    
-    -- Technology and business
-    CASE 
-        WHEN TRY_CAST(internet_penetration AS DECIMAL(5,2)) IS NULL THEN 0.0
-        ELSE CAST(internet_penetration AS DECIMAL(5,2))
-    END AS internet_penetration,
-    
-    CASE 
-        WHEN TRY_CAST(commercial_rent_kes_psqm AS DECIMAL(18,2)) IS NULL THEN 0.0
-        ELSE CAST(commercial_rent_kes_psqm AS DECIMAL(18,2))
-    END AS commercial_rent_kes_psqm,
-    
-    CASE 
-        WHEN TRY_CAST(business_registration_days AS INT) IS NULL THEN 0
-        ELSE CAST(business_registration_days AS INT)
-    END AS business_registration_days,
-    
-    -- Security index: Keep as DECIMAL with 1 decimal place
-    CASE 
-        WHEN TRY_CAST(security_index AS DECIMAL(3,1)) IS NULL THEN 5.0
-        WHEN TRY_CAST(security_index AS DECIMAL(3,1)) < 1.0 THEN 1.0
-        WHEN TRY_CAST(security_index AS DECIMAL(3,1)) > 10.0 THEN 10.0
-        ELSE CAST(security_index AS DECIMAL(3,1))
-    END AS security_index,
-    
-    -- Tourist arrivals (multiplied by 1000)
-    CASE 
-        WHEN TRY_CAST(tourist_arrivals_annual AS DECIMAL(18,2)) IS NULL THEN 0
-        ELSE CAST(CAST(tourist_arrivals_annual AS DECIMAL(18,2)) * 1000 AS INT)
-    END AS tourist_arrivals_annual,
-    
-    -- Geographic coordinates
-    CASE 
-        WHEN TRY_CAST(latitude AS DECIMAL(10,6)) IS NULL THEN 0.0
-        ELSE CAST(latitude AS DECIMAL(10,6))
-    END AS latitude,
-    
-    CASE 
-        WHEN TRY_CAST(longitude AS DECIMAL(10,6)) IS NULL THEN 0.0
-        ELSE CAST(longitude AS DECIMAL(10,6))
-    END AS longitude,
-    
-    -- Additional information
-    major_towns,
-    competitor_counts_json
-FROM bronze.gis_counties_raw;
-
-SET @RowsAffected = @@ROWCOUNT;
-PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
+        SELECT 
+            county_id,
+            county_name,
+            
+            -- Population metrics with validation
+            CASE 
+                WHEN TRY_CAST(population_2023 AS INT) IS NULL THEN 0
+                ELSE CAST(population_2023 AS INT)
+            END AS population_2023,
+            
+            CASE 
+                WHEN TRY_CAST(area_sqkm AS DECIMAL(18,2)) IS NULL THEN 0.0
+                ELSE CAST(area_sqkm AS DECIMAL(18,2))
+            END AS area_sqkm,
+            
+            -- Calculated population density
+            CASE 
+                WHEN TRY_CAST(population_2023 AS DECIMAL(18,2)) IS NULL 
+                     OR TRY_CAST(area_sqkm AS DECIMAL(18,2)) IS NULL 
+                     OR CAST(area_sqkm AS DECIMAL(18,2)) = 0
+                THEN 0.0
+                ELSE ROUND(
+                    CAST(population_2023 AS DECIMAL(18,2)) / 
+                    CAST(area_sqkm AS DECIMAL(18,2)), 
+                    2
+                )
+            END AS population_density_psqkm,
+            
+            -- Economic indicators with validation
+            CASE 
+                WHEN TRY_CAST(poverty_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(poverty_rate AS DECIMAL(5,2))
+            END AS poverty_rate,
+            
+            CASE 
+                WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(unemployment_rate AS DECIMAL(5,2))
+            END AS unemployment_rate,
+            
+            CASE 
+                WHEN TRY_CAST(avg_household_income_kes AS DECIMAL(18,2)) IS NULL THEN 0.0
+                ELSE CAST(avg_household_income_kes AS DECIMAL(18,2))
+            END AS avg_household_income_kes,
+            
+            -- Development metrics
+            CASE 
+                WHEN TRY_CAST(urbanization_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(urbanization_rate AS DECIMAL(5,2))
+            END AS urbanization_rate,
+            
+            CASE 
+                WHEN TRY_CAST(literacy_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(literacy_rate AS DECIMAL(5,2))
+            END AS literacy_rate,
+            
+            -- Infrastructure scores: Keep as DECIMAL with 1 decimal place
+            CASE 
+                WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) IS NULL THEN 5.0
+                WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) < 1.0 THEN 1.0
+                WHEN TRY_CAST(road_infrastructure_score AS DECIMAL(3,1)) > 10.0 THEN 10.0
+                ELSE CAST(road_infrastructure_score AS DECIMAL(3,1))
+            END AS road_infrastructure_score,
+            
+            CASE 
+                WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) IS NULL THEN 5.0
+                WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) < 1.0 THEN 1.0
+                WHEN TRY_CAST(public_transport_score AS DECIMAL(3,1)) > 10.0 THEN 10.0
+                ELSE CAST(public_transport_score AS DECIMAL(3,1))
+            END AS public_transport_score,
+            
+            -- Technology and business
+            CASE 
+                WHEN TRY_CAST(internet_penetration AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(internet_penetration AS DECIMAL(5,2))
+            END AS internet_penetration,
+            
+            CASE 
+                WHEN TRY_CAST(commercial_rent_kes_psqm AS DECIMAL(18,2)) IS NULL THEN 0.0
+                ELSE CAST(commercial_rent_kes_psqm AS DECIMAL(18,2))
+            END AS commercial_rent_kes_psqm,
+            
+            CASE 
+                WHEN TRY_CAST(business_registration_days AS INT) IS NULL THEN 0
+                ELSE CAST(business_registration_days AS INT)
+            END AS business_registration_days,
+            
+            -- Security index: Keep as DECIMAL with 1 decimal place
+            CASE 
+                WHEN TRY_CAST(security_index AS DECIMAL(3,1)) IS NULL THEN 5.0
+                WHEN TRY_CAST(security_index AS DECIMAL(3,1)) < 1.0 THEN 1.0
+                WHEN TRY_CAST(security_index AS DECIMAL(3,1)) > 10.0 THEN 10.0
+                ELSE CAST(security_index AS DECIMAL(3,1))
+            END AS security_index,
+            
+            -- Tourist arrivals (multiplied by 1000)
+            CASE 
+                WHEN TRY_CAST(tourist_arrivals_annual AS DECIMAL(18,2)) IS NULL THEN 0
+                ELSE CAST(CAST(tourist_arrivals_annual AS DECIMAL(18,2)) * 1000 AS INT)
+            END AS tourist_arrivals_annual,
+            
+            -- Geographic coordinates
+            CASE 
+                WHEN TRY_CAST(latitude AS DECIMAL(10,6)) IS NULL THEN 0.0
+                ELSE CAST(latitude AS DECIMAL(10,6))
+            END AS latitude,
+            
+            CASE 
+                WHEN TRY_CAST(longitude AS DECIMAL(10,6)) IS NULL THEN 0.0
+                ELSE CAST(longitude AS DECIMAL(10,6))
+            END AS longitude,
+            
+            -- Additional information
+            major_towns,
+            competitor_counts_json
+        FROM bronze.gis_counties_raw;
+        
+        SET @RowsAffected = @@ROWCOUNT;
+        PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 5. LOAD GIS LOCATIONS DATA
+        -- 5. LOAD GIS LOCATIONS DATA (No dependencies)
         -- --------------------------------------------------------------------
         PRINT '5. Loading GIS Site Assessment Data...';
         
@@ -487,9 +542,170 @@ PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 6. LOAD COMPETITORS DATA
+        -- 6. LOAD ECONOMIC INDICATORS DATA (No dependencies)
         -- --------------------------------------------------------------------
-        PRINT '6. Loading Competitor Profile Data...';
+        PRINT '6. Loading Economic Indicators Data...';
+        
+        WITH EconomicData AS (
+            SELECT
+                -- County name standardization (proper case)
+                CASE 
+                    WHEN county IS NOT NULL AND LTRIM(RTRIM(county)) <> ''
+                    THEN UPPER(LEFT(LTRIM(RTRIM(county)), 1)) + 
+                         LOWER(SUBSTRING(LTRIM(RTRIM(county)), 2, LEN(county)))
+                    ELSE NULL
+                END AS county,
+                
+                year_month,
+                
+                -- Year/month validation
+                CASE 
+                    WHEN TRY_CAST(year AS INT) IS NULL THEN 0
+                    ELSE CAST(year AS INT)
+                END AS year,
+                
+                CASE 
+                    WHEN TRY_CAST(month AS INT) IS NULL THEN 0
+                    ELSE CAST(month AS INT)
+                END AS month,
+                
+                -- Calculate rolling averages for missing values
+                AVG(CASE 
+                    WHEN TRY_CAST(gdp_growth_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(gdp_growth_rate AS DECIMAL(5,2))
+                END) OVER(
+                    PARTITION BY county 
+                    ORDER BY CAST(month AS INT)
+                ) AS average_gdp_growth,
+                
+                -- GDP growth rate with validation
+                CASE 
+                    WHEN TRY_CAST(gdp_growth_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(gdp_growth_rate AS DECIMAL(5,2))
+                END AS gdp_growth_rate,
+                
+                -- Inflation rate with validation and rolling average
+                CASE 
+                    WHEN TRY_CAST(inflation_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(inflation_rate AS DECIMAL(5,2))
+                END AS inflation_rate,
+                
+                AVG(CASE 
+                    WHEN TRY_CAST(inflation_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(inflation_rate AS DECIMAL(5,2))
+                END) OVER(
+                    PARTITION BY county 
+                    ORDER BY CAST(month AS INT)
+                ) AS average_inflation_rate,
+                
+                -- Unemployment rate with validation and rolling average
+                CASE 
+                    WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(unemployment_rate AS DECIMAL(5,2))
+                END AS unemployment_rate,
+                
+                AVG(CASE 
+                    WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(unemployment_rate AS DECIMAL(5,2))
+                END) OVER(
+                    PARTITION BY county 
+                    ORDER BY CAST(month AS INT)
+                ) AS average_unemployment_rate,
+                
+                -- Confidence indices
+                CASE 
+                    WHEN TRY_CAST(consumer_confidence_index AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(consumer_confidence_index AS DECIMAL(5,2))
+                END AS consumer_confidence_index,
+                
+                CASE 
+                    WHEN TRY_CAST(retail_sales_index AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(retail_sales_index AS DECIMAL(5,2))
+                END AS retail_sales_index,
+                
+                CASE 
+                    WHEN TRY_CAST(business_confidence_index AS DECIMAL(5,2)) IS NULL THEN 0.0
+                    ELSE CAST(business_confidence_index AS DECIMAL(5,2))
+            END AS business_confidence_index,
+            
+            -- Business registrations (negative values corrected)
+            CASE 
+                WHEN TRY_CAST(new_business_registrations AS INT) IS NULL THEN 0
+                WHEN CAST(new_business_registrations AS INT) < 0 THEN 0
+                ELSE CAST(new_business_registrations AS INT)
+            END AS new_business_registrations,
+            
+            -- Real estate indicators
+            CASE 
+                WHEN TRY_CAST(commercial_rent_growth AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(commercial_rent_growth AS DECIMAL(5,2))
+            END AS commercial_rent_growth,
+            
+            CASE 
+                WHEN TRY_CAST(retail_vacancy_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
+                ELSE CAST(retail_vacancy_rate AS DECIMAL(5,2))
+            END AS retail_vacancy_rate,
+            
+            -- Cost indicators
+            CASE 
+                WHEN TRY_CAST(avg_fuel_price_kes AS DECIMAL(18,2)) IS NULL THEN 0.0
+                ELSE CAST(avg_fuel_price_kes AS DECIMAL(18,2))
+            END AS avg_fuel_price_kes,
+            
+            CASE 
+                WHEN TRY_CAST(usd_kes_exchange_rate AS DECIMAL(18,2)) IS NULL THEN 0.0
+                ELSE CAST(usd_kes_exchange_rate AS DECIMAL(18,2))
+            END AS usd_kes_exchange_rate,
+            
+            -- Collection date
+            CASE 
+                WHEN TRY_CONVERT(DATE, data_collection_date) IS NOT NULL 
+                    THEN TRY_CONVERT(DATE, data_collection_date)
+                ELSE NULL
+            END AS data_collection_date,
+            
+            -- Data source
+            data_source AS original_data_source
+        FROM bronze.economic_raw
+    )
+    INSERT INTO silver.economic (
+        county, year_month, year, month, gdp_growth_rate,
+        inflation_rate, unemployment_rate, consumer_confidence_index,
+        retail_sales_index, business_confidence_index,
+        new_business_registrations, commercial_rent_growth,
+        retail_vacancy_rate, avg_fuel_price_kes,
+        usd_kes_exchange_rate, data_collection_date, data_source
+    )
+    SELECT 
+        county,
+        year_month,
+        year,
+        month,
+        
+        -- Use rolling average if original value is NULL
+        ISNULL(gdp_growth_rate, average_gdp_growth) AS gdp_growth_rate,
+        ISNULL(inflation_rate, average_inflation_rate) AS inflation_rate,
+        ISNULL(unemployment_rate, average_unemployment_rate) AS unemployment_rate,
+        
+        consumer_confidence_index,
+        retail_sales_index,
+        business_confidence_index,
+        new_business_registrations,
+        commercial_rent_growth,
+        retail_vacancy_rate,
+        avg_fuel_price_kes,
+        usd_kes_exchange_rate,
+        data_collection_date,
+        original_data_source
+    FROM EconomicData;
+    
+    SET @RowsAffected = @@ROWCOUNT;
+    PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
+        
+        -- --------------------------------------------------------------------
+        -- 7. LOAD COMPETITORS DATA (Parent table - must load before child)
+        -- --------------------------------------------------------------------
+        PRINT '7. Loading Competitor Profile Data (Parent Table)...';
         
         INSERT INTO silver.competitors (
             competitor_id, competitor_name, competitor_type,
@@ -547,9 +763,9 @@ PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 7. LOAD COMPETITOR STORES DATA
+        -- 8. LOAD COMPETITOR STORES DATA (Child table - depends on competitors)
         -- --------------------------------------------------------------------
-        PRINT '7. Loading Competitor Store Locations Data...';
+        PRINT '8. Loading Competitor Store Locations Data (Child Table)...';
         PRINT '   Note: Column mapping correction applied due to CSV import issues';
         
         INSERT INTO silver.competitor_stores (
@@ -646,167 +862,6 @@ PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
         
         -- --------------------------------------------------------------------
-        -- 8. LOAD ECONOMIC INDICATORS DATA
-        -- --------------------------------------------------------------------
-        PRINT '8. Loading Economic Indicators Data...';
-        
-        WITH EconomicData AS (
-            SELECT
-                -- County name standardization (proper case)
-                CASE 
-                    WHEN county IS NOT NULL AND LTRIM(RTRIM(county)) <> ''
-                    THEN UPPER(LEFT(LTRIM(RTRIM(county)), 1)) + 
-                         LOWER(SUBSTRING(LTRIM(RTRIM(county)), 2, LEN(county)))
-                    ELSE NULL
-                END AS county,
-                
-                year_month,
-                
-                -- Year/month validation
-                CASE 
-                    WHEN TRY_CAST(year AS INT) IS NULL THEN 0
-                    ELSE CAST(year AS INT)
-                END AS year,
-                
-                CASE 
-                    WHEN TRY_CAST(month AS INT) IS NULL THEN 0
-                    ELSE CAST(month AS INT)
-                END AS month,
-                
-                -- Calculate rolling averages for missing values
-                AVG(CASE 
-                    WHEN TRY_CAST(gdp_growth_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(gdp_growth_rate AS DECIMAL(5,2))
-                END) OVER(
-                    PARTITION BY county 
-                    ORDER BY CAST(month AS INT)
-                ) AS average_gdp_growth,
-                
-                -- GDP growth rate with validation
-                CASE 
-                    WHEN TRY_CAST(gdp_growth_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(gdp_growth_rate AS DECIMAL(5,2))
-                END AS gdp_growth_rate,
-                
-                -- Inflation rate with validation and rolling average
-                CASE 
-                    WHEN TRY_CAST(inflation_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(inflation_rate AS DECIMAL(5,2))
-                END AS inflation_rate,
-                
-                AVG(CASE 
-                    WHEN TRY_CAST(inflation_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(inflation_rate AS DECIMAL(5,2))
-                END) OVER(
-                    PARTITION BY county 
-                    ORDER BY CAST(month AS INT)
-                ) AS average_inflation_rate,
-                
-                -- Unemployment rate with validation and rolling average
-                CASE 
-                    WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(unemployment_rate AS DECIMAL(5,2))
-                END AS unemployment_rate,
-                
-                AVG(CASE 
-                    WHEN TRY_CAST(unemployment_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(unemployment_rate AS DECIMAL(5,2))
-                END) OVER(
-                    PARTITION BY county 
-                    ORDER BY CAST(month AS INT)
-                ) AS average_unemployment_rate,
-                
-                -- Confidence indices
-                CASE 
-                    WHEN TRY_CAST(consumer_confidence_index AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(consumer_confidence_index AS DECIMAL(5,2))
-                END AS consumer_confidence_index,
-                
-                CASE 
-                    WHEN TRY_CAST(retail_sales_index AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(retail_sales_index AS DECIMAL(5,2))
-                END AS retail_sales_index,
-                
-                CASE 
-                    WHEN TRY_CAST(business_confidence_index AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(business_confidence_index AS DECIMAL(5,2))
-                END AS business_confidence_index,
-                
-                -- Business registrations (negative values corrected)
-                CASE 
-                    WHEN TRY_CAST(new_business_registrations AS INT) IS NULL THEN 0
-                    WHEN CAST(new_business_registrations AS INT) < 0 THEN 0
-                    ELSE CAST(new_business_registrations AS INT)
-                END AS new_business_registrations,
-                
-                -- Real estate indicators
-                CASE 
-                    WHEN TRY_CAST(commercial_rent_growth AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(commercial_rent_growth AS DECIMAL(5,2))
-                END AS commercial_rent_growth,
-                
-                CASE 
-                    WHEN TRY_CAST(retail_vacancy_rate AS DECIMAL(5,2)) IS NULL THEN 0.0
-                    ELSE CAST(retail_vacancy_rate AS DECIMAL(5,2))
-                END AS retail_vacancy_rate,
-                
-                -- Cost indicators
-                CASE 
-                    WHEN TRY_CAST(avg_fuel_price_kes AS DECIMAL(18,2)) IS NULL THEN 0.0
-                    ELSE CAST(avg_fuel_price_kes AS DECIMAL(18,2))
-                END AS avg_fuel_price_kes,
-                
-                CASE 
-                    WHEN TRY_CAST(usd_kes_exchange_rate AS DECIMAL(18,2)) IS NULL THEN 0.0
-                    ELSE CAST(usd_kes_exchange_rate AS DECIMAL(18,2))
-                END AS usd_kes_exchange_rate,
-                
-                -- Collection date
-                CASE 
-                    WHEN TRY_CONVERT(DATE, data_collection_date) IS NOT NULL 
-                        THEN TRY_CONVERT(DATE, data_collection_date)
-                    ELSE NULL
-                END AS data_collection_date,
-                
-                -- Data source
-                data_source AS original_data_source
-            FROM bronze.economic_raw
-        )
-        INSERT INTO silver.economic (
-            county, year_month, year, month, gdp_growth_rate,
-            inflation_rate, unemployment_rate, consumer_confidence_index,
-            retail_sales_index, business_confidence_index,
-            new_business_registrations, commercial_rent_growth,
-            retail_vacancy_rate, avg_fuel_price_kes,
-            usd_kes_exchange_rate, data_collection_date, data_source
-        )
-        SELECT 
-            county,
-            year_month,
-            year,
-            month,
-            
-            -- Use rolling average if original value is NULL
-            ISNULL(gdp_growth_rate, average_gdp_growth) AS gdp_growth_rate,
-            ISNULL(inflation_rate, average_inflation_rate) AS inflation_rate,
-            ISNULL(unemployment_rate, average_unemployment_rate) AS unemployment_rate,
-            
-            consumer_confidence_index,
-            retail_sales_index,
-            business_confidence_index,
-            new_business_registrations,
-            commercial_rent_growth,
-            retail_vacancy_rate,
-            avg_fuel_price_kes,
-            usd_kes_exchange_rate,
-            data_collection_date,
-            original_data_source
-        FROM EconomicData;
-        
-        SET @RowsAffected = @@ROWCOUNT;
-        PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
-        
-        -- --------------------------------------------------------------------
         -- TRANSACTION COMMIT AND COMPLETION LOGGING
         -- --------------------------------------------------------------------
         COMMIT TRANSACTION;
@@ -825,6 +880,8 @@ PRINT '   • Rows loaded: ' + FORMAT(@RowsAffected, 'N0');
                    ELSE '' 
               END + 
               CAST(@RemainingSeconds AS NVARCHAR) + ' seconds';
+        PRINT 'Total tables reloaded: 8';
+        PRINT 'Note: silver.competitors was cleared using DELETE to maintain referential integrity';
         PRINT REPLICATE('=', 80);
         
         RETURN 0;  -- Success
@@ -882,3 +939,4 @@ EXEC silver.usp_LoadSilverLayer
     @DebugMode = 1;
 ===============================================================================
 */
+
