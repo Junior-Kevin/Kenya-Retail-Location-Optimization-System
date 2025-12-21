@@ -1,4 +1,4 @@
--- Drop existing table if it exists
+
 IF OBJECT_ID('gold.dim_county', 'U') IS NOT NULL
     DROP TABLE gold.dim_county;
 GO
@@ -15,7 +15,7 @@ CREATE TABLE gold.dim_county (
     poverty_rate DECIMAL(5,2),
     literacy_rate DECIMAL(5,2),
     
-    -- Economy (latest values - most recent economic data)
+    -- Economy (latest values)
     avg_household_income_kes DECIMAL(12,2),
     latest_unemployment_rate DECIMAL(5,2),
     latest_inflation_rate DECIMAL(5,2),
@@ -40,8 +40,8 @@ CREATE TABLE gold.dim_county (
     -- Store metrics
     store_count INT,
     competitor_density INT,
-    store_density DECIMAL(10,4),  -- stores per 100k population
-    market_saturation DECIMAL(10,4),  -- competitors per store
+    store_density DECIMAL(10,4),
+    market_saturation DECIMAL(10,4),
     
     -- Composite scores
     infrastructure_score DECIMAL(5,2),
@@ -62,51 +62,50 @@ CREATE TABLE gold.dim_county (
 );
 GO
 
--- Create the county dimension table with proper deduplication
 WITH customer_metrics AS (
     SELECT
-        primary_county,
-        COUNT(DISTINCT customer_id) AS total_customers,
-        AVG(customer_value_score) AS avg_customer_value_score,
-        AVG(CASE WHEN customer_value_score >= 70 THEN 1.0 ELSE 0.0 END) AS high_value_customer_ratio,
-        AVG(CASE WHEN churn_risk_flag = 1 THEN 1.0 ELSE 0.0 END) AS churn_risk_ratio
-    FROM gold.customer_value
-    WHERE primary_county IS NOT NULL
-    GROUP BY primary_county
+        cv.primary_county,
+        COUNT(DISTINCT cv.customer_id) AS total_customers,
+        AVG(cv.customer_value_score) AS avg_customer_value_score,
+        AVG(CASE WHEN cv.customer_value_score >= 70 THEN 1.0 ELSE 0.0 END) AS high_value_customer_ratio,
+        AVG(CASE WHEN cv.churn_risk_flag = 1 THEN 1.0 ELSE 0.0 END) AS churn_risk_ratio
+    FROM gold.customer_value cv
+    WHERE cv.primary_county IS NOT NULL
+    GROUP BY cv.primary_county
 ),
 store_metrics AS (
     SELECT
-        county,
+        UPPER(LTRIM(RTRIM(county))) AS county,
         COUNT(*) AS store_count
     FROM silver.stores
     WHERE county IS NOT NULL AND county <> ''
-    GROUP BY county
+    GROUP BY UPPER(LTRIM(RTRIM(county)))
 ),
 competitor_metrics AS (
     SELECT
-        county,
+        UPPER(LTRIM(RTRIM(county))) AS county,
         COUNT(*) AS competitor_density
     FROM silver.competitor_stores
     WHERE county IS NOT NULL AND county <> ''
-    GROUP BY county
+    GROUP BY UPPER(LTRIM(RTRIM(county)))
 ),
 -- Get the LATEST economic data for each county
 latest_economic AS (
     SELECT 
-        county,
+        UPPER(LTRIM(RTRIM(county))) AS county,
         inflation_rate,
         unemployment_rate,
         retail_sales_index,
         consumer_confidence_index,
         gdp_growth_rate,
-        ROW_NUMBER() OVER (PARTITION BY county ORDER BY year_month DESC) AS recency_rank
+        ROW_NUMBER() OVER (PARTITION BY UPPER(LTRIM(RTRIM(county))) ORDER BY year_month DESC) AS recency_rank
     FROM silver.economic
     WHERE county IS NOT NULL
 ),
 county_base AS (
     SELECT DISTINCT
         gc.county_id,
-        gc.county_name,
+        UPPER(LTRIM(RTRIM(gc.county_name))) AS county_name,
         gc.population_2023,
         gc.population_density_psqkm,
         gc.urbanization_rate,
@@ -161,7 +160,7 @@ joined_data AS (
     LEFT JOIN latest_economic le
         ON cb.county_name = le.county AND le.recency_rank = 1
     LEFT JOIN customer_metrics cm
-        ON cb.county_name = cm.primary_county
+        ON cb.county_name = UPPER(LTRIM(RTRIM(cm.primary_county)))
     LEFT JOIN store_metrics sm
         ON cb.county_name = sm.county
     LEFT JOIN competitor_metrics cp
@@ -338,20 +337,4 @@ SELECT
     major_towns
 FROM calculated_metrics;
 GO
-
--- Create indexes for performance
-CREATE INDEX idx_gold_dim_county_name ON gold.dim_county(county_name);
-CREATE INDEX idx_gold_dim_expansion_priority ON gold.dim_county(expansion_priority);
-CREATE INDEX idx_gold_dim_final_location_score ON gold.dim_county(final_location_score DESC);
-CREATE INDEX idx_gold_dim_market_attractiveness ON gold.dim_county(market_attractiveness_score DESC);
-CREATE INDEX idx_gold_dim_risk_flag ON gold.dim_county(risk_flag);
-CREATE INDEX idx_gold_dim_store_density ON gold.dim_county(store_density DESC);
-GO
-
--- Add documentation
-EXEC sys.sp_addextendedproperty 
-    @name = N'MS_Description', 
-    @value = N'County dimension table for expansion analysis. Contains demographic, economic, and competitive data with composite scores for location evaluation.',
-    @level0type = N'SCHEMA', @level0name = N'gold',
-    @level1type = N'TABLE', @level1name = N'dim_county';
-GO
+SELECT * FROM gold.dim_county
