@@ -225,10 +225,13 @@ BEGIN
             
             -- Customer handling (NULL becomes ANONYMOUS)
             CASE 
-                WHEN customer_id IS NULL 
+                WHEN REPLACE(customer_id,'-','_') IS NULL OR LTRIM(RTRIM(customer_id)) = '' 
                 THEN 'ANONYMOUS'
-                ELSE customer_id
-            END AS customer_id,
+                ELSE REPLACE(CONCAT (SUBSTRING(customer_id,1,9), CASE 
+		                  WHEN SUBSTRING(customer_id,10,1) != 0 THEN 0
+		                    ELSE 0
+		                  END , SUBSTRING(customer_id,11,6)),'-','_')
+                 END AS customer_id,
             
             -- Product details
             line_item_id,
@@ -778,7 +781,7 @@ BEGIN
             store_id,
             competitor_id,
             
-            -- Column mapping correction: town → county (with proper casing)
+            -- Column mapping correction: town ? county (with proper casing)
             CASE 
                 WHEN town IS NOT NULL AND LTRIM(RTRIM(town)) <> ''
                 THEN UPPER(LEFT(LTRIM(RTRIM(town)), 1)) + 
@@ -786,41 +789,41 @@ BEGIN
                 ELSE NULL
             END AS county,
             
-            -- Column mapping correction: store_size_sqm → town
+            -- Column mapping correction: store_size_sqm ? town
             store_size_sqm AS town,
             
-            -- Column mapping correction: store_format → store_size_sqm
+            -- Column mapping correction: store_format ? store_size_sqm
             CASE 
                 WHEN TRY_CONVERT(INT, store_format) IS NULL THEN 0
                 WHEN TRY_CONVERT(INT, store_format) < 0 THEN 0
                 ELSE TRY_CONVERT(INT, store_format)
             END AS store_size_sqm,
             
-            -- Column mapping correction: opening_date → store_format
+            -- Column mapping correction: opening_date ? store_format
             opening_date AS store_format,
             
-            -- Column mapping correction: estimated_monthly_revenue_kes → opening_date
+            -- Column mapping correction: estimated_monthly_revenue_kes ? opening_date
             CASE 
                 WHEN TRY_CONVERT(DATE, estimated_monthly_revenue_kes) IS NOT NULL 
                     THEN TRY_CONVERT(DATE, estimated_monthly_revenue_kes)
                 ELSE NULL
             END AS opening_date,
             
-            -- Column mapping correction: estimated_daily_customers → estimated_monthly_revenue_kes
+            -- Column mapping correction: estimated_daily_customers ? estimated_monthly_revenue_kes
             CASE 
                 WHEN TRY_CONVERT(DECIMAL(18,2), estimated_daily_customers) IS NULL THEN 0.0
                 WHEN TRY_CONVERT(DECIMAL(18,2), estimated_daily_customers) < 0 THEN 0.0
                 ELSE CAST(estimated_daily_customers AS DECIMAL(18,2))
             END AS estimated_monthly_revenue_kes,
             
-            -- Column mapping correction: location_score → estimated_daily_customers
+            -- Column mapping correction: location_score ? estimated_daily_customers
             CASE 
                 WHEN TRY_CAST(location_score AS INT) IS NULL THEN 0
                 WHEN TRY_CAST(location_score AS INT) < 0 THEN 0
                 ELSE CAST(location_score AS INT)
             END AS estimated_daily_customers,
             
-            -- Column mapping correction: parking_available → location_score
+            -- Column mapping correction: parking_available ? location_score
             CASE 
                 WHEN TRY_CAST(parking_available AS INT) IS NULL THEN 1
                 WHEN TRY_CAST(parking_available AS INT) < 1 THEN 1
@@ -828,28 +831,28 @@ BEGIN
                 ELSE CAST(parking_available AS INT)
             END AS location_score,
             
-            -- Column mapping correction: has_delivery → parking_available
+            -- Column mapping correction: has_delivery ? parking_available
             CASE 
                 WHEN UPPER(LTRIM(RTRIM(has_delivery))) IN ('YES', 'Y', '1', 'TRUE') THEN 'Yes'
                 WHEN UPPER(LTRIM(RTRIM(has_delivery))) IN ('NO', 'N', '0', 'FALSE') THEN 'No'
                 ELSE 'Unknown'
             END AS parking_available,
             
-            -- Column mapping correction: last_verified → has_delivery
+            -- Column mapping correction: last_verified ? has_delivery
             CASE 
                 WHEN UPPER(LTRIM(RTRIM(last_verified))) IN ('YES', 'Y', '1', 'TRUE') THEN 'Yes'
                 WHEN UPPER(LTRIM(RTRIM(last_verified))) IN ('NO', 'N', '0', 'FALSE') THEN 'No'
                 ELSE 'Unknown'
             END AS has_delivery,
             
-            -- Column mapping correction: LEFT(data_source,10) → last_verified
+            -- Column mapping correction: LEFT(data_source,10) ? last_verified
             CASE 
                 WHEN TRY_CONVERT(DATE, LEFT(data_source, 10)) IS NOT NULL 
                     THEN TRY_CONVERT(DATE, LEFT(data_source, 10))
                 ELSE NULL
             END AS last_verified,
             
-            -- Column mapping correction: SUBSTRING(data_source,12) → data_source
+            -- Column mapping correction: SUBSTRING(data_source,12) ? data_source
             CASE 
                 WHEN LEN(data_source) > 10 
                     THEN SUBSTRING(data_source, 12, LEN(data_source))
@@ -940,3 +943,4 @@ EXEC silver.usp_LoadSilverLayer
 ===============================================================================
 */
 
+EXEC silver.usp_LoadSilverLayer 
