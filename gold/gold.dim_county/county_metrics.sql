@@ -1,52 +1,77 @@
+-- Drop existing table if it exists
 IF OBJECT_ID('gold.dim_county', 'U') IS NOT NULL
     DROP TABLE gold.dim_county;
 GO
 
--- Create the table with explicit data types
+-- Create the county dimension table
 CREATE TABLE gold.dim_county (
     county_id NVARCHAR(50) PRIMARY KEY,
     county_name NVARCHAR(100),
+    
+    -- Demographics
     population_2023 INT,
     population_density_psqkm DECIMAL(10,2),
     urbanization_rate DECIMAL(5,2),
+    poverty_rate DECIMAL(5,2),
+    literacy_rate DECIMAL(5,2),
+    
+    -- Economy (latest values - most recent economic data)
     avg_household_income_kes DECIMAL(12,2),
-    unemployment_rate DECIMAL(5,2),
-    inflation_rate DECIMAL(5,2),
-    retail_sales_index DECIMAL(10,2),
+    latest_unemployment_rate DECIMAL(5,2),
+    latest_inflation_rate DECIMAL(5,2),
+    latest_gdp_growth_rate DECIMAL(5,2),
+    latest_retail_sales_index DECIMAL(5,2),
+    latest_consumer_confidence_index DECIMAL(5,2),
+    
+    -- Infrastructure
     road_infrastructure_score DECIMAL(5,2),
     internet_penetration DECIMAL(5,2),
     public_transport_score DECIMAL(5,2),
-    infrastructure_score DECIMAL(5,2),
+    commercial_rent_kes_psqm DECIMAL(10,2),
+    business_registration_days INT,
+    security_index DECIMAL(5,2),
+    
+    -- Customer metrics
     total_customers INT,
     avg_customer_value_score DECIMAL(5,2),
     high_value_customer_ratio DECIMAL(5,2),
     churn_risk_ratio DECIMAL(5,2),
+    
+    -- Store metrics
     store_count INT,
     competitor_density INT,
-    store_density DECIMAL(10,4),
-    market_saturation DECIMAL(10,4),
+    store_density DECIMAL(10,4),  -- stores per 100k population
+    market_saturation DECIMAL(10,4),  -- competitors per store
+    
+    -- Composite scores
+    infrastructure_score DECIMAL(5,2),
     market_attractiveness_score DECIMAL(5,2),
     expansion_readiness_score DECIMAL(5,2),
     risk_score DECIMAL(5,2),
     final_location_score DECIMAL(5,2),
+    
+    -- Decision flags
     expansion_priority NVARCHAR(10),
     premium_store_viable BIT,
-    risk_flag BIT
+    risk_flag BIT,
+    
+    -- Geographic info
+    latitude DECIMAL(10,6),
+    longitude DECIMAL(10,6),
+    major_towns NVARCHAR(500)
 );
 GO
 
+-- Create the county dimension table with proper deduplication
 WITH customer_metrics AS (
     SELECT
         primary_county,
         COUNT(DISTINCT customer_id) AS total_customers,
-        AVG(TRY_CAST(customer_value_score AS DECIMAL(5,2))) AS avg_customer_value_score,
-        AVG(CASE WHEN TRY_CAST(customer_value_score AS DECIMAL(5,2)) >= 70 THEN 1.0 ELSE 0.0 END)
-            AS high_value_customer_ratio,
-        AVG(CASE WHEN TRY_CAST(churn_risk_flag AS DECIMAL(5,2)) >= 70 THEN 1.0 ELSE 0.0 END)
-            AS churn_risk_ratio
+        AVG(customer_value_score) AS avg_customer_value_score,
+        AVG(CASE WHEN customer_value_score >= 70 THEN 1.0 ELSE 0.0 END) AS high_value_customer_ratio,
+        AVG(CASE WHEN churn_risk_flag = 1 THEN 1.0 ELSE 0.0 END) AS churn_risk_ratio
     FROM gold.customer_value
-    WHERE customer_id IS NOT NULL 
-        AND TRY_CAST(customer_value_score AS DECIMAL(5,2)) IS NOT NULL
+    WHERE primary_county IS NOT NULL
     GROUP BY primary_county
 ),
 store_metrics AS (
@@ -65,28 +90,38 @@ competitor_metrics AS (
     WHERE county IS NOT NULL AND county <> ''
     GROUP BY county
 ),
--- Deduplicate economic data (this is likely where duplicates come from)
-deduplicated_economic AS (
+-- Get the LATEST economic data for each county
+latest_economic AS (
     SELECT 
         county,
-        AVG(TRY_CAST(unemployment_rate AS DECIMAL(5,2))) AS unemployment_rate,
-        AVG(TRY_CAST(inflation_rate AS DECIMAL(5,2))) AS inflation_rate,
-        AVG(TRY_CAST(retail_sales_index AS DECIMAL(10,2))) AS retail_sales_index
+        inflation_rate,
+        unemployment_rate,
+        retail_sales_index,
+        consumer_confidence_index,
+        gdp_growth_rate,
+        ROW_NUMBER() OVER (PARTITION BY county ORDER BY year_month DESC) AS recency_rank
     FROM silver.economic
-    WHERE county IS NOT NULL AND county <> ''
-    GROUP BY county
+    WHERE county IS NOT NULL
 ),
-base_data AS (
+county_base AS (
     SELECT DISTINCT
-        TRY_CAST(gc.county_id AS NVARCHAR(50)) AS county_id,
+        gc.county_id,
         gc.county_name,
         gc.population_2023,
         gc.population_density_psqkm,
         gc.urbanization_rate,
+        gc.poverty_rate,
+        gc.literacy_rate,
         gc.avg_household_income_kes,
         gc.road_infrastructure_score,
         gc.internet_penetration,
-        gc.public_transport_score
+        gc.public_transport_score,
+        gc.commercial_rent_kes_psqm,
+        gc.business_registration_days,
+        gc.security_index,
+        gc.latitude,
+        gc.longitude,
+        gc.major_towns
     FROM silver.gis_counties gc
     WHERE gc.county_id IS NOT NULL 
         AND gc.population_2023 > 0
@@ -94,33 +129,43 @@ base_data AS (
 ),
 joined_data AS (
     SELECT
-        bd.county_id,
-        bd.county_name,
-        bd.population_2023,
-        bd.population_density_psqkm,
-        bd.urbanization_rate,
-        bd.avg_household_income_kes,
-        COALESCE(de.unemployment_rate, 0) AS unemployment_rate,
-        COALESCE(de.inflation_rate, 0) AS inflation_rate,
-        COALESCE(de.retail_sales_index, 0) AS retail_sales_index,
-        TRY_CAST(bd.road_infrastructure_score AS DECIMAL(5,2)) AS road_infrastructure_score,
-        TRY_CAST(bd.internet_penetration AS DECIMAL(5,2)) AS internet_penetration,
-        TRY_CAST(bd.public_transport_score AS DECIMAL(5,2)) AS public_transport_score,
+        cb.county_id,
+        cb.county_name,
+        cb.population_2023,
+        cb.population_density_psqkm,
+        cb.urbanization_rate,
+        cb.poverty_rate,
+        cb.literacy_rate,
+        cb.avg_household_income_kes,
+        le.inflation_rate AS latest_inflation_rate,
+        le.unemployment_rate AS latest_unemployment_rate,
+        le.retail_sales_index AS latest_retail_sales_index,
+        le.consumer_confidence_index AS latest_consumer_confidence_index,
+        le.gdp_growth_rate AS latest_gdp_growth_rate,
+        cb.road_infrastructure_score,
+        cb.internet_penetration,
+        cb.public_transport_score,
+        cb.commercial_rent_kes_psqm,
+        cb.business_registration_days,
+        cb.security_index,
+        cb.latitude,
+        cb.longitude,
+        cb.major_towns,
         COALESCE(cm.total_customers, 0) AS total_customers,
         COALESCE(cm.avg_customer_value_score, 0) AS avg_customer_value_score,
         COALESCE(cm.high_value_customer_ratio, 0) AS high_value_customer_ratio,
         COALESCE(cm.churn_risk_ratio, 0) AS churn_risk_ratio,
         COALESCE(sm.store_count, 0) AS store_count,
         COALESCE(cp.competitor_density, 0) AS competitor_density
-    FROM base_data bd
-    LEFT JOIN deduplicated_economic de
-        ON bd.county_name = de.county
+    FROM county_base cb
+    LEFT JOIN latest_economic le
+        ON cb.county_name = le.county AND le.recency_rank = 1
     LEFT JOIN customer_metrics cm
-        ON bd.county_name = cm.primary_county
+        ON cb.county_name = cm.primary_county
     LEFT JOIN store_metrics sm
-        ON bd.county_name = sm.county
+        ON cb.county_name = sm.county
     LEFT JOIN competitor_metrics cp
-        ON bd.county_name = cp.county
+        ON cb.county_name = cp.county
 ),
 calculated_metrics AS (
     SELECT
@@ -149,13 +194,13 @@ calculated_metrics AS (
             THEN 
                 (road_infrastructure_score * 0.4 +
                  internet_penetration * 0.3 +
-                 public_transport_score * 0.3)
+                 public_transport_score * 0.3) * 10
             ELSE 0
         END AS infrastructure_score,
         
         -- Market Attractiveness Score (normalized to 0-100)
         (
-            -- Population density normalized (assuming max 5000 per sqkm)
+            -- Population density normalized (assuming max 5000 per sqkm = 100)
             CASE WHEN population_density_psqkm > 5000 THEN 100 
                  ELSE population_density_psqkm / 50.0 
             END * 0.25 +
@@ -181,7 +226,7 @@ calculated_metrics AS (
                     AND public_transport_score IS NOT NULL
                 THEN (road_infrastructure_score * 0.4 +
                       internet_penetration * 0.3 +
-                      public_transport_score * 0.3)
+                      public_transport_score * 0.3) * 10
                 ELSE 0
             END * 0.6 +
             
@@ -192,19 +237,18 @@ calculated_metrics AS (
         -- Risk Score (0-100, higher = more risk)
         (
             -- Inflation risk (0-100, assuming max 50% inflation = 100 score)
-            CASE WHEN inflation_rate > 50 THEN 100 
-                 ELSE inflation_rate * 2.0 
+            CASE WHEN latest_inflation_rate > 50 THEN 100 
+                 ELSE latest_inflation_rate * 2.0 
             END * 0.5 +
             
             -- Unemployment risk (0-100, assuming max 50% unemployment = 100 score)
-            CASE WHEN unemployment_rate > 50 THEN 100 
-                 ELSE unemployment_rate * 2.0 
+            CASE WHEN latest_unemployment_rate > 50 THEN 100 
+                 ELSE latest_unemployment_rate * 2.0 
             END * 0.3 +
             
             -- Churn risk (0-100)
             churn_risk_ratio * 100 * 0.2
         ) AS risk_score
-
     FROM joined_data
 )
 
@@ -212,28 +256,48 @@ INSERT INTO gold.dim_county
 SELECT
     county_id,
     county_name,
+    
+    -- Demographics
     population_2023,
     population_density_psqkm,
     urbanization_rate,
+    poverty_rate,
+    literacy_rate,
+    
+    -- Economy (latest values)
     avg_household_income_kes,
-    unemployment_rate,
-    inflation_rate,
-    retail_sales_index,
+    latest_unemployment_rate,
+    latest_inflation_rate,
+    latest_gdp_growth_rate,
+    latest_retail_sales_index,
+    latest_consumer_confidence_index,
+    
+    -- Infrastructure
     road_infrastructure_score,
     internet_penetration,
     public_transport_score,
-    infrastructure_score,
+    commercial_rent_kes_psqm,
+    business_registration_days,
+    security_index,
+    
+    -- Customer metrics
     total_customers,
     avg_customer_value_score,
     high_value_customer_ratio,
     churn_risk_ratio,
+    
+    -- Store metrics
     store_count,
     competitor_density,
     store_density,
     market_saturation,
+    
+    -- Composite scores
+    infrastructure_score,
     market_attractiveness_score,
     expansion_readiness_score,
     risk_score,
+    
     -- Final Location Score (normalized to 0-100)
     (
         -- Positive factors (weighted 80%)
@@ -248,98 +312,46 @@ SELECT
         -- Negative factors (risk, weighted 20%)
         (risk_score * 0.2)
     ) AS final_location_score,
+    
     -- Decision Flags
     CASE
         WHEN market_attractiveness_score > 70 THEN 'High'
         WHEN market_attractiveness_score BETWEEN 40 AND 70 THEN 'Medium'
         ELSE 'Low'
     END AS expansion_priority,
+    
     CASE
         WHEN avg_household_income_kes >= 80000
              AND high_value_customer_ratio >= 0.25
              AND market_saturation < 3
         THEN 1 ELSE 0
     END AS premium_store_viable,
+    
     CASE
-        WHEN inflation_rate > 10 OR unemployment_rate > 12
+        WHEN latest_inflation_rate > 10 OR latest_unemployment_rate > 12
         THEN 1 ELSE 0
-    END AS risk_flag
+    END AS risk_flag,
+    
+    -- Geographic info
+    latitude,
+    longitude,
+    major_towns
 FROM calculated_metrics;
 GO
 
 -- Create indexes for performance
-CREATE INDEX idx_dim_county_name ON gold.dim_county(county_name);
-CREATE INDEX idx_dim_expansion_priority ON gold.dim_county(expansion_priority);
-CREATE INDEX idx_dim_final_location_score ON gold.dim_county(final_location_score DESC);
-CREATE INDEX idx_dim_market_attractiveness ON gold.dim_county(market_attractiveness_score DESC);
-CREATE INDEX idx_dim_risk_flag ON gold.dim_county(risk_flag);
-CREATE INDEX idx_dim_store_density ON gold.dim_county(store_density DESC);
-CREATE INDEX idx_dim_market_saturation ON gold.dim_county(market_saturation);
+CREATE INDEX idx_gold_dim_county_name ON gold.dim_county(county_name);
+CREATE INDEX idx_gold_dim_expansion_priority ON gold.dim_county(expansion_priority);
+CREATE INDEX idx_gold_dim_final_location_score ON gold.dim_county(final_location_score DESC);
+CREATE INDEX idx_gold_dim_market_attractiveness ON gold.dim_county(market_attractiveness_score DESC);
+CREATE INDEX idx_gold_dim_risk_flag ON gold.dim_county(risk_flag);
+CREATE INDEX idx_gold_dim_store_density ON gold.dim_county(store_density DESC);
 GO
 
--- Add a comment documenting the weighting logic
+-- Add documentation
 EXEC sys.sp_addextendedproperty 
     @name = N'MS_Description', 
-    @value = N'County dimension table with composite scores for expansion analysis.
-    
-Scoring Methodology:
-1. Market Attractiveness Score (40% weight in final score):
-   - Population Density: 25% (normalized: 5000/sqkm = 100)
-   - Urbanization Rate: 25% (0-100 scale)
-   - Average Household Income: 25% (normalized: KES 200,000 = 100)
-   - Customer Value Score: 25% (0-100 scale)
-
-2. Expansion Readiness Score (40% weight in final score):
-   - Infrastructure: 60% (Roads 40%, Internet 30%, Transport 30%)
-   - Urbanization Rate: 40% (0-100 scale)
-
-3. Risk Score (20% weight in final score, subtracted):
-   - Inflation Rate: 50% (normalized: 50% = 100)
-   - Unemployment Rate: 30% (normalized: 50% = 100)
-   - Churn Risk Ratio: 20% (0-100 scale)
-
-4. Final Location Score = (Market Attractiveness * 0.4) + (Expansion Readiness * 0.4) - (Risk Score * 0.2)
-    
-All scores normalized to 0-100 scale where higher is better (except Risk Score where higher is worse).',
+    @value = N'County dimension table for expansion analysis. Contains demographic, economic, and competitive data with composite scores for location evaluation.',
     @level0type = N'SCHEMA', @level0name = N'gold',
     @level1type = N'TABLE', @level1name = N'dim_county';
-GO
-
--- Add comments for key columns
-EXEC sys.sp_addextendedproperty 
-    @name = N'MS_Description', 
-    @value = N'Composite score (0-100) evaluating county suitability for expansion. Higher scores indicate better locations.',
-    @level0type = N'SCHEMA', @level0name = N'gold',
-    @level1type = N'TABLE', @level1name = N'dim_county',
-    @level2type = N'COLUMN', @level2name = N'final_location_score';
-
-EXEC sys.sp_addextendedproperty 
-    @name = N'MS_Description', 
-    @value = N'Number of competitor stores per existing store. Values > 3 indicate high market saturation.',
-    @level0type = N'SCHEMA', @level0name = N'gold',
-    @level1type = N'TABLE', @level1name = N'dim_county',
-    @level2type = N'COLUMN', @level2name = N'market_saturation';
-GO
-
--- Diagnostic query to check for duplicates
-PRINT 'Checking for duplicates in source tables...';
-GO
-
-SELECT 'silver.economic duplicates:' AS TableName, county, COUNT(*) as DuplicateCount
-FROM silver.economic
-WHERE county IS NOT NULL
-GROUP BY county
-HAVING COUNT(*) > 1
-UNION ALL
-SELECT 'silver.gis_counties duplicates:' AS TableName, county_id, COUNT(*) as DuplicateCount
-FROM silver.gis_counties
-WHERE county_id IS NOT NULL
-GROUP BY county_id
-HAVING COUNT(*) > 1
-UNION ALL
-SELECT 'gold.customer_value duplicates:' AS TableName, primary_county, COUNT(*) as DuplicateCount
-FROM gold.customer_value
-WHERE primary_county IS NOT NULL
-GROUP BY primary_county
-HAVING COUNT(*) > 1;
 GO
