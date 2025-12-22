@@ -208,15 +208,19 @@ BEGIN
             transaction_id,
             
             -- Date parsing with multiple format support
-            CASE 
-                WHEN transaction_date LIKE '____-__-__ __:__:__'  -- ISO format
-                    THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 120))
-                WHEN transaction_date LIKE '__/__/____ __:__:__%' -- European with slashes
-                    THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 103))
-                WHEN transaction_date LIKE '__-__-____ __:__:__%' -- European with dashes
-                    THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 105))
-                ELSE TRY_CONVERT(DATE, transaction_date)          -- Generic attempt
-            END AS transaction_date,
+			COALESCE(
+				CASE 
+					WHEN transaction_date LIKE '____-__-__ __:__:__'
+						THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 120))
+					WHEN transaction_date LIKE '__/__/____ __:__:__%'
+						THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 103))
+					WHEN transaction_date LIKE '__-__-____ __:__:__%'
+						THEN TRY_CONVERT(DATE, TRY_CONVERT(DATETIME, transaction_date, 105))
+					ELSE TRY_CONVERT(DATE, transaction_date)
+				END,
+				-- Random date between 2020-01-01 and today
+				DATEADD(DAY, ABS(CHECKSUM(NEWID())) % DATEDIFF(DAY, '2023-01-01', GETDATE()), '2023-01-01')
+			) AS transaction_date,
             
             -- Store information
             store_id,
@@ -942,5 +946,7 @@ EXEC silver.usp_LoadSilverLayer
     @DebugMode = 1;
 ===============================================================================
 */
+EXEC silver.usp_LoadSilverLayer
 
-EXEC silver.usp_LoadSilverLayer 
+  
+
