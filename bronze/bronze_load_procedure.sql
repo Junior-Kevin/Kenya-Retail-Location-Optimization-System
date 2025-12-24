@@ -76,7 +76,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,            -- Skip header row
             FIELDTERMINATOR = '','',  -- Comma-separated values
-            ROWTERMINATOR = ''0x0a'', -- Line feed terminator
+            ROWTERMINATOR = ''0x0d0a'', -- Line feed terminator
             TABLOCK                  -- Table lock for performance
         )');
         SET @gis_counties_count = @@ROWCOUNT;
@@ -93,7 +93,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @gis_locations_count = @@ROWCOUNT;
@@ -110,7 +110,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @stores_count = @@ROWCOUNT;
@@ -128,7 +128,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @hr_count = @@ROWCOUNT;
@@ -145,7 +145,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @crm_count = @@ROWCOUNT;
@@ -163,7 +163,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @pos_count = @@ROWCOUNT;
@@ -186,7 +186,7 @@ BEGIN
                 WITH (
                     FIRSTROW = 2,
                     FIELDTERMINATOR = '','',
-                    ROWTERMINATOR = ''0x0a'',
+                    ROWTERMINATOR = ''0x0d0a'',
                     TABLOCK
                 )');
                 SET @products_count = @@ROWCOUNT;
@@ -213,7 +213,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @competitors_count = @@ROWCOUNT;
@@ -230,7 +230,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @competitor_stores_count = @@ROWCOUNT;
@@ -247,7 +247,7 @@ BEGIN
         WITH (
             FIRSTROW = 2,
             FIELDTERMINATOR = '','',
-            ROWTERMINATOR = ''0x0a'',
+            ROWTERMINATOR = ''0x0d0a'',
             TABLOCK
         )');
         SET @economic_count = @@ROWCOUNT;
@@ -270,7 +270,7 @@ BEGIN
                 WITH (
                     FIRSTROW = 2,
                     FIELDTERMINATOR = '','',
-                    ROWTERMINATOR = ''0x0a'',
+                    ROWTERMINATOR = ''0x0d0a'',
                     TABLOCK
                 )');
                 SET @employee_shifts_count = @@ROWCOUNT;
@@ -431,3 +431,5 @@ PRINT '   python products_raw.py';
 PRINT '   python employee_shifts_raw.py';
 PRINT '3. Verify CSV files appear in the bronze\bronze\ directory';
 PRINT '==============================================================';
+
+EXEC bronze.run_data_load
