@@ -57,7 +57,27 @@ CREATE TABLE gold.fact_store_performance (
 );
 GO
 
-WITH store_sales AS (
+WITH store_first_transaction AS (
+    SELECT
+        store_id,
+        MIN(transaction_date) AS first_transaction_date
+    FROM silver.pos
+    WHERE transaction_date IS NOT NULL
+    GROUP BY store_id
+),
+store_opening_dates AS (
+    SELECT
+        store_id,
+        -- Opening date is 2 days before first transaction
+        CASE 
+            WHEN first_transaction_date IS NOT NULL 
+            THEN DATEADD(DAY, -2, CAST(first_transaction_date AS DATE))
+            ELSE NULL
+        END AS opening_date,
+        first_transaction_date
+    FROM store_first_transaction
+),
+store_sales AS (
     SELECT
         p.store_id,
         s.store_name,
@@ -117,7 +137,12 @@ calculated AS (
         ss.county,
         ss.store_format,
         ss.size_sqm,
-        NULL AS opening_date,
+        COALESCE(sod.opening_date, 
+                CASE 
+                    WHEN ss.last_transaction_date IS NOT NULL 
+                    THEN DATEADD(DAY, -2, CAST(ss.last_transaction_date AS DATE))
+                    ELSE NULL 
+                END) AS opening_date,
         
         -- Sales performance
         ss.total_transactions,
@@ -142,11 +167,15 @@ calculated AS (
         
         -- County averages
         COALESCE(ca.avg_county_revenue, 0) AS avg_county_revenue,
-        COALESCE(ca.avg_county_revenue_per_sqm, 0) AS avg_county_revenue_per_sqm
+        COALESCE(ca.avg_county_revenue_per_sqm, 0) AS avg_county_revenue_per_sqm,
+        
+        -- First transaction date for reference
+        sod.first_transaction_date
     FROM store_sales ss
     LEFT JOIN store_customers sc ON ss.store_id = sc.store_id
     LEFT JOIN store_competition stc ON ss.store_id = stc.store_id
     LEFT JOIN county_averages ca ON ss.county = ca.county
+    LEFT JOIN store_opening_dates sod ON ss.store_id = sod.store_id
 ),
 percentiles AS (
     SELECT 
@@ -266,6 +295,13 @@ SELECT county, store_name, competitors_in_county, vs_county_average
 FROM gold.fact_store_performance
 WHERE cannibalization_risk = 1
 ORDER BY county, vs_county_average;
+
+-- Stores with opening dates (new feature)
+SELECT store_name, county, opening_date, 
+       DATEADD(DAY, 2, opening_date) as first_transaction_estimate,
+       total_revenue_kes, revenue_per_sqm
+FROM gold.fact_store_performance
+WHERE opening_date IS NOT NULL
+ORDER BY opening_date DESC;
 ===============================================================================
 */
-select * from gold.fact_store_performance
