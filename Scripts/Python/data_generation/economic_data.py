@@ -3,7 +3,9 @@ import pandas as pd
 import numpy as np
 import random
 from datetime import datetime, timedelta
+import os
 from towns import KENYAN_COUNTIES, get_random_town, get_weighted_town
+
 np.random.seed(46)
 random.seed(46)
 
@@ -12,8 +14,8 @@ def generate_economic_data():
     
     print("Generating economic indicators data...")
     
-    # Monthly economic data for 2023
-    months = pd.date_range(start='2023-01-01', end='2023-12-31', freq='MS')
+    # Monthly economic data for 2023-2025
+    months = pd.date_range(start='2023-01-01', end='2025-12-31', freq='MS')
     economic_data = []
     
     for county in KENYAN_COUNTIES:
@@ -59,8 +61,8 @@ def generate_economic_data():
             retail_vacancy_rate = np.random.uniform(5.0, 20.0)
             
             # External factors
-            fuel_price_kes = np.random.uniform(120, 180)
-            exchange_rate_usd = np.random.uniform(140, 160)
+            fuel_price_kes = np.random.uniform(150, 190)
+            exchange_rate_usd = np.random.uniform(130, 160)
             
             record = {
                 'county': county,
@@ -110,11 +112,11 @@ def generate_economic_data():
     return df_economic
 
 # Generate economic data
+os.makedirs('bronze', exist_ok=True)
 economic_df = generate_economic_data()
 
 # Save to bronze layer
-economic_df.to_csv('economic_raw.csv', index=False)
-#economic_df.to_parquet('bronze/economic_raw.parquet', index=False)
+economic_df.to_csv('bronze/economic_raw.csv', index=False)
 
 print("\nSample economic data:")
 print(economic_df[['county', 'year_month', 'gdp_growth_rate', 'inflation_rate', 'retail_sales_index']].head())

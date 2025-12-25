@@ -5,7 +5,9 @@ import random
 from faker import Faker
 from datetime import datetime, timedelta
 import json
+import os
 from towns import KENYAN_COUNTIES, get_random_town, get_weighted_town
+
 fake = Faker('en_KE')
 np.random.seed(45)
 random.seed(45)
@@ -27,7 +29,7 @@ def generate_competitor_data():
         {'name': 'Magunas Supermarket', 'type': 'Local Chain', 'founded': 1985, 'store_count': 32},
         {'name': 'Tumaini Supermarket', 'type': 'Local Chain', 'founded': 2010, 'store_count': 14},
         {'name': 'Powerstar Supermarket', 'type': 'Local Chain', 'founded': 2012, 'store_count': 10},
-        {'name': 'Mathai’s Supermarket', 'type': 'Local Chain', 'founded': 2015, 'store_count': 9},
+        {'name': 'Mathai\'s Supermarket', 'type': 'Local Chain', 'founded': 2015, 'store_count': 9},
         {'name': 'Society Stores', 'type': 'Local Chain', 'founded': 2013, 'store_count': 8},
         {'name': 'Village Supermarket', 'type': 'Local Chain', 'founded': 2005, 'store_count': 5},
         {'name': 'Woolmatt Supermarket', 'type': 'Local Chain', 'founded': 2018, 'store_count': 9},
@@ -127,7 +129,8 @@ def generate_competitor_data():
             county_probs += [0] * (len(KENYAN_COUNTIES) - len(county_probs))
             
             county = np.random.choice(KENYAN_COUNTIES, p=county_probs)
-            town = get_weighted_town(county)  # ensures town belongs to county
+            town = get_weighted_town(county)
+            
             # Store characteristics
             store_size = np.random.choice([300, 800, 1500, 3000, 5000], 
                                         p=[0.2, 0.3, 0.3, 0.15, 0.05])
@@ -191,13 +194,12 @@ def generate_competitor_data():
     return df_competitors, df_competitor_stores
 
 # Generate competitor data
+os.makedirs('bronze', exist_ok=True)
 competitors_df, competitor_stores_df = generate_competitor_data()
 
 # Save to bronze layer
-competitors_df.to_csv('competitors_raw.csv', index=False)
-#competitors_df.to_parquet('competitors_raw.parquet', index=False)
-competitor_stores_df.to_csv('competitor_stores_raw.csv', index=False)
-#competitor_stores_df.to_parquet('competitor_stores_raw.parquet', index=False)
+competitors_df.to_csv('bronze/competitors_raw.csv', index=False)
+competitor_stores_df.to_csv('bronze/competitor_stores_raw.csv', index=False)
 
 print("\nSample competitor data:")
 print(competitors_df[['competitor_name', 'competitor_type', 'total_stores', 'estimated_market_share', 'positioning']])

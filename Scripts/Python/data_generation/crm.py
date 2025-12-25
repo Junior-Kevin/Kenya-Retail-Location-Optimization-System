@@ -5,7 +5,9 @@ from faker import Faker
 import random
 from datetime import datetime, timedelta
 import json
+import os
 from towns import KENYAN_COUNTIES, get_weighted_town, get_random_town
+
 # Initialize Faker for Kenyan context
 fake = Faker('en_KE')
 np.random.seed(42)
@@ -18,7 +20,7 @@ customer_segments = [
 ]
 
 # Generate CRM data with realistic Kenyan context
-def generate_crm_dataset(num_customers=100000):
+def generate_crm_dataset(num_customers=150000):
     """Generate synthetic CRM data for Kenyan retail customers"""
     
     print("Generating CRM dataset...")
@@ -39,9 +41,6 @@ def generate_crm_dataset(num_customers=100000):
         email = f"{first_name.lower()}.{last_name.lower()}{random.randint(1, 999)}@gmail.com"
         
         # Location with realistic Kenyan distribution
-        # Nairobi and Mombasa have higher probability
-# Location with realistic Kenyan distribution
-# Create weighted probabilities
         weights = []
         for county in KENYAN_COUNTIES:
             if county == 'Nairobi':
@@ -193,9 +192,9 @@ def generate_crm_dataset(num_customers=100000):
     return df
 
 # Generate and save the CRM data
-crm_df = generate_crm_dataset(100000)
-crm_df.to_csv('crm_raw.csv', index=False)
-#crm_df.to_parquet('crm_raw.parquet', index=False)
+os.makedirs('bronze', exist_ok=True)
+crm_df = generate_crm_dataset(150000)
+crm_df.to_csv('bronze/crm_raw.csv', index=False)
 
 print("\nSample of CRM data:")
 print(crm_df[['customer_id', 'county', 'customer_segment', 'avg_transaction_value_kes', 'customer_status']].head(10))
