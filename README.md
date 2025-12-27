@@ -2,7 +2,7 @@
 
 ## 📋 Project Overview
 
-A comprehensive end-to-end data analytics project simulating retail location optimization for a fictional supermarket chain **KenyaFresh Markets** expanding across Kenya’s **47 counties**.
+A comprehensive end-to-end data analytics project simulating retail location optimization for a fictional supermarket chain **Blue Canopy Retail** expanding across Kenya’s **47 counties**.
 
 This project demonstrates **full-stack data skills**:
 - Synthetic data generation
