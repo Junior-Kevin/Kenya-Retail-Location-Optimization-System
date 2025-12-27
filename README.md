@@ -30,7 +30,7 @@ A scalable analytics system combining:
 
 The system follows a **modern layered data architecture** designed for analytics, scalability, and decision support.
 
-![Kenya Retail Location Optimization – Data Architecture](docs/Files/data_architecture.pdf)
+![Kenya Retail Location Optimization – Data Architecture](docs/Files/blue%20canopy%20data_flow-data%20architecture.drawio3.svg)
 
 ---
 
