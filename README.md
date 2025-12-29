@@ -120,5 +120,4 @@ Version Control: Git & GitHub
 Junior Kevin
 Data Analyst | Data Engineer | Analytics Enthusiast
 
-yaml
-Copy code
+
