@@ -1,0 +1,281 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Blue Canopy Kenya Expansion Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1976D2 0%, #0D47A1 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        .nav-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            background: #f5f5f5;
+            border-bottom: 2px solid #1976D2;
+            overflow-x: auto;
+        }
+        .nav-tab {
+            padding: 15px 20px;
+            cursor: pointer;
+            background: #f5f5f5;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            color: #333;
+        }
+        .nav-tab:hover {
+            background: #e0e0e0;
+            border-bottom: 3px solid #1976D2;
+        }
+        .nav-tab.active {
+            background: white;
+            color: #1976D2;
+            border-bottom: 3px solid #1976D2;
+        }
+        .content {
+            padding: 30px;
+            min-height: 600px;
+        }
+        .chart-container {
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+        .chart-container.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .chart-frame {
+            width: 100%;
+            height: 700px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+        }
+        .info-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .info-box h3 {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+        .footer {
+            background: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid #e0e0e0;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1976D2;
+        }
+        .metric-card h4 {
+            color: #1976D2;
+            margin-bottom: 5px;
+        }
+        .metric-card p {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🇰🇪 Blue Canopy Kenya Expansion Dashboard</h1>
+            <p>Data-Driven Strategic Market Analysis & Interactive Insights</p>
+        </div>
+        
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showChart('overview')">📊 Overview</button>
+            <button class="nav-tab" onclick="showChart('priority')">📍 Expansion Priority</button>
+            <button class="nav-tab" onclick="showChart('opportunity')">💼 Market Opportunity</button>
+            <button class="nav-tab" onclick="showChart('competition')">🏪 Competition</button>
+            <button class="nav-tab" onclick="showChart('revenue')">💰 Revenue</button>
+            <button class="nav-tab" onclick="showChart('infrastructure')">🏗️ Infrastructure</button>
+            <button class="nav-tab" onclick="showChart('customer')">👥 Customer Value</button>
+            <button class="nav-tab" onclick="showChart('scenario')">📈 Scenarios</button>
+            <button class="nav-tab" onclick="showChart('gap')">🎯 Market Gap</button>
+            <button class="nav-tab" onclick="showChart('map')">🗺️ Store Map</button>
+        </div>
+        
+        <div class="content">
+            <!-- Overview Tab -->
+            <div id="overview" class="chart-container active">
+                <h2>Dashboard Overview</h2>
+                <div class="info-box">
+                    <h3>📌 Quick Summary</h3>
+                    <p><strong>Total Counties Analyzed:</strong> 47 | <strong>Current Stores:</strong> 82 | <strong>Tier 1 Opportunities:</strong> 9</p>
+                    <p><strong>Top Recommendation:</strong> Lamu (Score: 0.454) | <strong>Largest Market:</strong> Kiambu (2.75M population)</p>
+                    <p><strong>Highest Income:</strong> Mombasa (KES 144K) | <strong>Best Market Gap:</strong> Samburu</p>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h4>🏆 Top Priority County</h4>
+                        <p>Lamu</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>📈 Avg Expansion Score</h4>
+                        <p>0.385</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>💡 Market Gap Leaders</h4>
+                        <p>Samburu, Baringo, Wajir</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4>🎯 ROI Target</h4>
+                        <p>25-35% Annually</p>
+                    </div>
+                </div>
+                <h3>Key Questions Answered</h3>
+                <ul style="margin-left: 20px; line-height: 2;">
+                    <li>✅ Q1-2: Market opportunity & demographics identified across 47 counties</li>
+                    <li>✅ Q3-4: Purchasing power mapped; 9 market gap zones located</li>
+                    <li>✅ Q5-7: Store performance vs potential analyzed; infrastructure impact quantified</li>
+                    <li>✅ Q8-14: Customer insights & lifetime value by county detailed</li>
+                    <li>✅ Q15-20: Scenario analysis & strategic recommendations provided</li>
+                </ul>
+            </div>
+            
+            <!-- Expansion Priority Tab -->
+            <div id="priority" class="chart-container">
+                <h2>Expansion Priority Ranking</h2>
+                <p style="margin-bottom: 15px;">Top 15 counties by expansion potential considering market opportunity, economic resilience, and infrastructure.</p>
+                <iframe class="chart-frame" src="01_expansion_priority.html"></iframe>
+            </div>
+            
+            <!-- Market Opportunity Tab -->
+            <div id="opportunity" class="chart-container">
+                <h2>Market Opportunity Matrix</h2>
+                <p style="margin-bottom: 15px;">Population vs household income with bubble size representing current store presence.</p>
+                <iframe class="chart-frame" src="02_market_opportunity.html"></iframe>
+            </div>
+            
+            <!-- Competition Tab -->
+            <div id="competition" class="chart-container">
+                <h2>Competition Analysis</h2>
+                <p style="margin-bottom: 15px;">Blue Canopy vs competitor store presence and market density ratios.</p>
+                <iframe class="chart-frame" src="03_competition_analysis.html"></iframe>
+            </div>
+            
+            <!-- Revenue Tab -->
+            <div id="revenue" class="chart-container">
+                <h2>Revenue Performance</h2>
+                <p style="margin-bottom: 15px;">Top 15 counties by monthly revenue, indicating actual market demand.</p>
+                <iframe class="chart-frame" src="04_revenue_performance.html"></iframe>
+            </div>
+            
+            <!-- Infrastructure Tab -->
+            <div id="infrastructure" class="chart-container">
+                <h2>Infrastructure vs Revenue</h2>
+                <p style="margin-bottom: 15px;">Quality of roads, transport, and connectivity correlation with store performance.</p>
+                <iframe class="chart-frame" src="05_infrastructure_revenue.html"></iframe>
+            </div>
+            
+            <!-- Customer Tab -->
+            <div id="customer" class="chart-container">
+                <h2>Customer Lifetime Value</h2>
+                <p style="margin-bottom: 15px;">Customer purchasing frequency vs lifetime value by county.</p>
+                <iframe class="chart-frame" src="06_customer_ltv.html"></iframe>
+            </div>
+            
+            <!-- Scenario Tab -->
+            <div id="scenario" class="chart-container">
+                <h2>Scenario Sensitivity Analysis</h2>
+                <p style="margin-bottom: 15px;">Impact of inflation spikes and income decline on market rankings.</p>
+                <iframe class="chart-frame" src="07_scenario_analysis.html"></iframe>
+            </div>
+            
+            <!-- Market Gap Tab -->
+            <div id="gap" class="chart-container">
+                <h2>Market Gap Analysis</h2>
+                <p style="margin-bottom: 15px;">High demand vs low competition opportunities for first-mover advantage.</p>
+                <iframe class="chart-frame" src="08_market_gap.html"></iframe>
+            </div>
+            
+            <!-- Map Tab -->
+            <div id="map" class="chart-container">
+                <h2>Store Locations Map</h2>
+                <p style="margin-bottom: 15px;">Current Blue Canopy stores (blue) and Tier 1 expansion recommendations (green).</p>
+                <iframe class="chart-frame" src="09_kenya_map_stores.html"></iframe>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Blue Canopy Kenya Expansion Dashboard | Generated January 2026 | Interactive Analysis Tool</p>
+            <p>Data Source: KenyaFreshRetail Database (Silver Schema) | 47 Counties Analyzed</p>
+        </div>
+    </div>
+    
+    <script>
+        function showChart(tabName) {
+            // Hide all charts
+            const containers = document.querySelectorAll('.chart-container');
+            containers.forEach(c => c.classList.remove('active'));
+            
+            // Remove active from all buttons
+            const buttons = document.querySelectorAll('.nav-tab');
+            buttons.forEach(b => b.classList.remove('active'));
+            
+            // Show selected chart
+            document.getElementById(tabName).classList.add('active');
+            
+            // Highlight active button
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
