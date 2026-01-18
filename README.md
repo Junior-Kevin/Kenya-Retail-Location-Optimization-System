@@ -1,4 +1,4 @@
-# 🛒 Kenya Retail Location Optimization System
+# 🛒 Blue Canopy Location Optimization System
 
 ## 📋 Project Overview
 
